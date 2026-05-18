@@ -172,7 +172,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
     <div class="tx-list">
       <div class="date-group" v-for="g in groups" :key="g.key">
         <div class="date-head"><span class="date-text">{{ g.date }}</span><span class="date-sum">收入 {{ g.in }} 支出 {{ g.out }}</span></div>
-        <div class="tx-row" v-for="t in g.items" :key="t.id" @click="editTx(t)" @touchstart="holdTimer = setTimeout(() => delTx(t.id), 600)" @touchend="clearTimeout(holdTimer)" @touchmove="clearTimeout(holdTimer)">
+        <div class="tx-row" v-for="t in g.items" :key="t.id" @click="editTx(t)" @touchstart="holdTimer = setTimeout(() => delTx(t.id), 400)" @touchend="clearTimeout(holdTimer)" @touchmove="clearTimeout(holdTimer)">
           <div class="tx-left">
             <div class="tx-icon" :style="{ background: t.type === 1 ? '#e8f5e9' : '#ffebee' }">{{ t.emoji }}</div>
             <div><div class="tx-cat">{{ t.catName || '未分类' }}</div><div class="tx-meta">{{ t.srcName }}{{ t.note ? ' · ' + t.note : '' }}</div></div>
@@ -249,6 +249,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
       <div class="form-row"><span class="fl">日期</span><input type="date" v-model="f.date"></div>
       <div class="form-row"><span class="fl">备注</span><input v-model="f.note" placeholder="选填"></div>
       <button :class="'btn-save ' + (f.type === 1 ? 'inc' : 'exp')" @click="saveTx">{{ editId ? '保存修改' : '记一笔' }}</button>
+      <button v-if="editId" style="width:100%;height:44px;border:none;border-radius:22px;color:#F44336;font-size:14px;background:#fff;border:1px solid #F44336;margin-top:10px" @click="delAndClose">删除这条记录</button>
     </div>
   </div>
 
@@ -426,6 +427,7 @@ const app = createApp({
       this.reload();this.modal=false;this.toast(this.editId?'修改成功':'记账成功');
     },
     delTx(id){save(load().filter(t=>t.id!==id));this.reload();this.toast('已删除')},
+    delAndClose(){this.delTx(this.editId);this.modal=false},
 
     selectPick(o){if(this.pick==='cat'){this.f.catId=o.id}else{this.f.srcId=o.id};this.pick=null},
 
