@@ -23,9 +23,14 @@ import java.util.regex.Pattern;
 public class PaymentListenerService extends NotificationListenerService {
 
     private static final String CHAN_ID = "payment_island";
+    private static final String CHAN_FG = "listener_fg";
     private static final String PREFS = "ledger_state";
+    private static final int FG_NOTIFY_ID = 3001;
     private NotificationManager nm;
     private SharedPreferences prefs;
+
+    public static volatile boolean isConnected = false;
+    public static volatile long lastConnectTime = 0;
 
     public static final List<PendingTx> pendingList = new ArrayList<>();
     public static volatile PendingTx lastTx;
@@ -39,6 +44,7 @@ public class PaymentListenerService extends NotificationListenerService {
         "com.tencent.mm", "com.eg.android.AlipayGphone",
         "com.icbc", "com.chinamworld.boc", "com.android.bankabc",
         "cmb.pb", "com.bankcomm.maidanba", "com.psbc.mobilebank",
+        "com.yitong.mbank.psbc",
         "com.bocec", "cn.com.spdb.mobilebank.per", "com.cmbc.mbank",
         "com.cebbank.mobile.cemb", "com.hxb.mobile.bank", "com.cib.finance",
         "com.unionpay", "cn.gov.pbc.dcep",
@@ -50,8 +56,11 @@ public class PaymentListenerService extends NotificationListenerService {
         nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel ch = new NotificationChannel(CHAN_ID, "支付检测", NotificationManager.IMPORTANCE_HIGH);
-            ch.setShowBadge(false); ch.enableVibration(true); nm.createNotificationChannel(ch);
+            NotificationChannel ch1 = new NotificationChannel(CHAN_ID, "支付检测", NotificationManager.IMPORTANCE_HIGH);
+            ch1.setShowBadge(false); ch1.enableVibration(true); nm.createNotificationChannel(ch1);
+            NotificationChannel ch2 = new NotificationChannel(CHAN_FG, "监听状态", NotificationManager.IMPORTANCE_MIN);
+            ch2.setShowBadge(false); ch2.setSound(null, null);
+            nm.createNotificationChannel(ch2);
         }
         appendLog("服务已启动");
     }
@@ -59,7 +68,38 @@ public class PaymentListenerService extends NotificationListenerService {
     @Override
     public void onListenerConnected() {
         super.onListenerConnected();
-        appendLog("监听已连接 · 全局监听=" + (prefs.getBoolean("listen_all", false) ? "开" : "关"));
+        isConnected = true;
+        lastConnectTime = System.currentTimeMillis();
+        startForegroundNotification();
+        appendLog("监听已连接 · 监控App数=" + WATCH.length);
+        prefs.edit().putLong("last_connect_time", lastConnectTime).putBoolean("was_connected", true).apply();
+    }
+
+    @Override
+    public void onListenerDisconnected() {
+        super.onListenerDisconnected();
+        isConnected = false;
+        appendLog("⚠ 监听已断开！请重新授权通知权限");
+        try { requestRebind(new android.content.ComponentName(this, PaymentListenerService.class)); } catch (Exception e) {}
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        isConnected = false;
+        stopForeground(true);
+        appendLog("⚠ 服务被销毁");
+    }
+
+    private void startForegroundNotification() {
+        Notification fg = new NotificationCompat.Builder(this, CHAN_FG)
+            .setSmallIcon(R.drawable.ic_notify)
+            .setContentTitle("记账宝监听中")
+            .setContentText("自动识别支付通知")
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .build();
+        startForeground(FG_NOTIFY_ID, fg);
     }
 
     @Override
@@ -69,8 +109,8 @@ public class PaymentListenerService extends NotificationListenerService {
             String pkg = sbn.getPackageName(); if (pkg == null) return;
             if (getPackageName().equals(pkg)) return;
 
-            boolean watch = prefs.getBoolean("listen_all", false);
-            if (!watch) { for (String w : WATCH) if (pkg.equals(w)) { watch = true; break; } }
+            boolean watch = false;
+            for (String w : WATCH) if (pkg.equals(w)) { watch = true; break; }
             if (!watch) return;
 
             Bundle extras = sbn.getNotification().extras;
@@ -87,17 +127,33 @@ public class PaymentListenerService extends NotificationListenerService {
             String text = sb.toString().trim();
             if (text.isEmpty()) return;
 
-            appendLog(pkg + " | " + text);
+            // 只记录可能跟支付相关的通知（含¥或金额数字X.XX或支付关键词），普通聊天不记日志
+            boolean maybePayment = text.matches(".*[¥￥].*") ||
+                text.matches(".*\\d+\\.\\d{2}.*") ||
+                text.contains("支付") || text.contains("收款") || text.contains("转账") ||
+                text.contains("[微信红包]") || text.contains("[红包]") || text.contains("消费") || text.contains("存入") ||
+                text.contains("入账") || text.contains("退款") || text.contains("扣款") ||
+                text.contains("提现") || text.contains("到账") || text.contains("动账") || text.contains("元") ||
+                text.contains("支出") || text.contains("收入") || text.contains("付款");
 
+            boolean isWxPkg = "com.tencent.mm".equals(pkg);
+            boolean isAliPkg = "com.eg.android.AlipayGphone".equals(pkg);
             PendingTx tx = parseTx(text, pkg);
+            if (!maybePayment && tx == null) {
+                if (isWxPkg || isAliPkg) appendLog(pkg + " | 已过滤(非支付)");
+                return;
+            }
+
+            appendLog(pkg + " | " + text);
             if (tx == null) { appendLog("  -> 未匹配"); return; }
 
             appendLog("  -> 匹配! " + tx.source + " ¥" + String.format("%.2f", tx.amount));
 
             synchronized (pendingList) {
-                String key = tx.source + "_" + tx.amount + "_" + tx.type;
+                String key = tx.raw != null ? tx.raw : (tx.source + "_" + tx.amount + "_" + tx.type);
                 for (PendingTx p : pendingList) {
-                    if ((p.source + "_" + p.amount + "_" + p.type).equals(key)) { appendLog("  -> 去重跳过"); return; }
+                    String pk = p.raw != null ? p.raw : (p.source + "_" + p.amount + "_" + p.type);
+                    if (pk.equals(key)) { appendLog("  -> 去重跳过"); return; }
                 }
                 pendingList.add(tx); lastTx = tx;
                 if (pendingList.size() > 20) pendingList.remove(0);
@@ -123,20 +179,27 @@ public class PaymentListenerService extends NotificationListenerService {
             if (r != null) return r;
             r = match(text, "红包.*?[¥￥]\\s*(\\d+\\.?\\d{1,2})", "微信红包", 1);
             if (r != null) return r;
-            if (text.contains("红包")) {
+            // 红包：需[微信红包]或[红包]标签或"红包"开头，排除聊天提及
+            if (text.contains("[微信红包]") || text.contains("[红包]") || text.trim().startsWith("红包")) {
                 r = match(text, "[¥￥]\\s*(\\d+\\.?\\d{1,2})", "微信红包", 1);
                 return r != null ? r : new PendingTx("微信红包", 0, 1, text);
             }
-            if (text.contains("转账") && text.contains("请收款")) {
-                r = match(text, "[¥￥]\\s*(\\d+\\.?\\d{1,2})", "微信转账", 1);
-                return r != null ? r : new PendingTx("微信转账", 0, 1, text);
-            }
+            // 转账判断核心："向XX"=我转给别人(支出)，不含"向"或"向你"=别人转给我(收入)
+            // 例: "向建鹏 [转账] 请收款"→支出  "向你转账"→收入
             if (text.contains("转账")) {
-                r = match(text, "[¥￥]\\s*(\\d+\\.?\\d{1,2})", "微信转账", 2);
-                return r != null ? r : new PendingTx("微信转账", 0, 2, text);
+                boolean isIncome = !text.contains("向") || text.contains("向你") || text.contains("给你");
+                int ttype = isIncome ? 1 : 2;
+                r = match(text, "[¥￥]\\s*(\\d+\\.?\\d{1,2})", "微信转账", ttype);
+                return r != null ? r : new PendingTx("微信转账", 0, ttype, text);
+            }
+            // 零钱提现到账（通常不含金额，amount=0 让用户手动填）
+            if (text.contains("零钱提现") || (text.contains("提现") && (text.contains("到账") || text.contains("成功")))) {
+                r = match(text, "[¥￥]\\s*(\\d+\\.?\\d{1,2})", "微信零钱提现", 1);
+                return r != null ? r : new PendingTx("微信零钱提现", 0, 1, text);
             }
             r = match(text, "[¥￥]\\s*(\\d+\\.?\\d{1,2})", "微信支付", 2);
             if (r != null) return r;
+            return null;
         }
 
         if (isAli) {
@@ -146,6 +209,7 @@ public class PaymentListenerService extends NotificationListenerService {
             if (r != null) return r;
             r = match(text, "[¥￥]\\s*(\\d+\\.?\\d{1,2})", "支付宝", 2);
             if (r != null) return r;
+            return null;
         }
 
         String bank = "银行卡";
@@ -159,9 +223,16 @@ public class PaymentListenerService extends NotificationListenerService {
         else if (text.contains("云闪")) bank = "云闪付";
         else if (text.contains("财付通")) bank = "微信支付";
 
-        PendingTx r = match(text, "(?:消费|支出|扣款|快捷支付|付款).*?[¥￥]\\s*(\\d+\\.?\\d{1,2})", bank, 2);
+        // 优先兜底：文本被截断无金额时直接匹配（如招行通知"快捷支..."）
+        if (text.contains("快捷") || text.contains("快捷支")) {
+            appendLog("  -> 兜底匹配(截断) " + bank);
+            return new PendingTx(bank, 0, 2, text);
+        }
+
+        // 关键词含"快捷"以兼容通知栏截断("快捷支...")
+        PendingTx r = match(text, "(?:消费|支出|扣款|快捷|支付|付款).*?[¥￥]\\s*(\\d+\\.?\\d{1,2})", bank, 2);
         if (r != null) return r;
-        r = match(text, "(?:消费|支出|扣款|快捷支付|付款).*?(\\d+\\.\\d{2})\\s*元?", bank, 2);
+        r = match(text, "(?:消费|支出|扣款|快捷|支付|付款).*?(\\d+\\.\\d{2})\\s*元?", bank, 2);
         if (r != null) return r;
         r = match(text, "(?:存入|入账|转入|收款|退款|收入|到账|人民币).*?[¥￥]\\s*(\\d+\\.?\\d{1,2})", bank, 1);
         if (r != null) return r;
@@ -174,12 +245,21 @@ public class PaymentListenerService extends NotificationListenerService {
             while (ma.find()) {
                 String ns = ma.group(1);
                 double d = Double.parseDouble(ns);
-                if (d > 0 && d < 100000 && ns.indexOf('.') > 0 && ns.substring(0, ns.indexOf('.')).length() <= 5) {
+                if (d > 0 && d < 10000000 && ns.indexOf('.') > 0 && ns.substring(0, ns.indexOf('.')).length() <= 5) {
                     int tp = (text.contains("存入") || text.contains("入账") || text.contains("收款") || text.contains("人民币")) ? 1 : 2;
                     return new PendingTx(bank, d, tp, text);
                 }
             }
         } catch (Exception e) {}
+        // 兜底：银行支付通知但金额被截断，amount=0 让用户手动填入
+        if (text.contains("快捷") || text.contains("快捷支") || text.contains("财付通") ||
+            text.contains("支付") || text.contains("消费") || text.contains("扣款") ||
+            text.contains("动账") || text.contains("交易")) {
+            return new PendingTx(bank, 0, 2, text);
+        }
+        if (text.contains("存入") || text.contains("入账") || text.contains("收款") || text.contains("到账")) {
+            return new PendingTx(bank, 0, 1, text);
+        }
         return null;
     }
 
@@ -188,7 +268,7 @@ public class PaymentListenerService extends NotificationListenerService {
             Matcher m = Pattern.compile(regex).matcher(text);
             if (m.find()) {
                 double amount = Double.parseDouble(m.group(1));
-                if (amount > 0 && amount < 100000) return new PendingTx(source, amount, type, text);
+                if (amount > 0 && amount < 10000000) return new PendingTx(source, amount, type, text);
             }
         } catch (Exception e) {}
         return null;
@@ -240,6 +320,13 @@ public class PaymentListenerService extends NotificationListenerService {
             List<PendingTx> c = new ArrayList<>(pendingList);
             pendingList.clear();
             return c;
+        }
+    }
+
+    public static PendingTx popLatest() {
+        synchronized (pendingList) {
+            if (pendingList.isEmpty()) return null;
+            return pendingList.remove(pendingList.size() - 1);
         }
     }
 }

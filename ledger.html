@@ -172,7 +172,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
     <div class="tx-list">
       <div class="date-group" v-for="g in groups" :key="g.key">
         <div class="date-head"><span class="date-text">{{ g.date }}</span><span class="date-sum">收入 {{ g.in }} 支出 {{ g.out }}</span></div>
-        <div class="tx-row" v-for="t in g.items" :key="t.id" @click="editTx(t)" @touchstart="holdTimer = setTimeout(() => delTx(t.id), 400)" @touchend="clearTimeout(holdTimer)" @touchmove="clearTimeout(holdTimer)">
+        <div class="tx-row" v-for="t in g.items" :key="t.id" @click="editTx(t)">
           <div class="tx-left">
             <div class="tx-icon" :style="{ background: t.type === 1 ? '#e8f5e9' : '#ffebee' }">{{ t.emoji }}</div>
             <div><div class="tx-cat">{{ t.catName || '未分类' }}</div><div class="tx-meta">{{ t.srcName }}{{ t.note ? ' · ' + t.note : '' }}</div></div>
@@ -214,16 +214,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 
   <template v-if="tab === 2">
     <div class="set-card" style="margin-top:12px">
-      <div class="set-row" @click="openNotifySettings"><span>通知监听权限</span><span style="color:#4CAF50;font-size:13px">去开启</span></div>
-      <div class="set-row" @click="openOverlaySettings"><span>悬浮窗权限</span><span style="color:#F44336;font-size:13px">去开启</span></div>
-      <div class="set-row" @click="openAccessibilitySettings"><span>无障碍服务</span><span style="color:#4CAF50;font-size:13px">去开启</span></div>
-      <div class="set-row" @click="toggleAllListen"><span>🌐 全局监听</span><span :style="{color: listenAll ? '#4CAF50' : '#999', fontSize:'13px'}">{{ listenAll ? '已开启' : '已关闭' }}</span></div>
+      <div class="set-row" @click="refreshStatus"><span>监听服务</span><span :style="{color: serviceRunning===true?'#4CAF50':serviceRunning===false?'#F44336':'#999',fontSize:'13px'}">{{serviceRunning===true?'运行中':serviceRunning===false?'已断开':'检测中...'}}</span></div>
+      <div class="set-row" @click="openNotifySettings"><span>通知监听权限</span><span style="color:#4CAF50;font-size:13px">去授权</span></div>
+      <div class="set-row" @click="openOverlaySettings"><span>悬浮窗权限</span><span :style="{color: overlayOk?'#4CAF50':'#F44336',fontSize:'13px'}">{{overlayOk?'已开启':'去开启'}}</span></div>
       <div class="set-row" @click="showDebug=!showDebug;if(showDebug)loadDebugLog()"><span>🔍 调试日志</span><span style="color:#999;font-size:13px">{{showDebug?'收起':'展开'}}</span></div>
       <div v-if="showDebug" style="padding:8px 16px;background:#f9f9f9;font-size:11px;max-height:200px;overflow-y:auto;white-space:pre-wrap;font-family:monospace;color:#666">{{debugLog||'暂无日志'}}</div>
       <div class="set-row" @click="dlgClear = true"><span>清除所有数据</span><span style="color:#F44336;font-size:13px">危险操作</span></div>
     </div>
     <div class="set-card">
-      <div class="set-row"><span>版本</span><span style="color:#999">2.0</span></div>
+      <div class="set-row"><span>版本</span><span style="color:#999">2.0.4</span></div>
       <div class="set-row"><span>记录总数</span><span style="color:#999">{{ list.length }} 条</span></div>
       <div class="set-row"><span>数据存储</span><span style="color:#4CAF50">手机本地 · 无需联网</span></div>
     </div>
@@ -232,7 +231,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
   <div class="tab-bar">
     <div :class="'tab-item' + (tab === 0 ? ' active' : '')" @click="tab = 0"><span class="tab-emoji">📋</span>流水</div>
     <div :class="'tab-item' + (tab === 1 ? ' active' : '')" @click="switchTab(1)"><span class="tab-emoji">📊</span>统计</div>
-    <div :class="'tab-item' + (tab === 2 ? ' active' : '')" @click="tab = 2"><span class="tab-emoji">⚙️</span>设置</div>
+    <div :class="'tab-item' + (tab === 2 ? ' active' : '')" @click="tab=2;refreshStatus()"><span class="tab-emoji">⚙️</span>设置</div>
   </div>
 
   <div class="modal-mask" v-if="modal" @click="closeModal"></div>
@@ -291,10 +290,12 @@ const SRCS = [
 ];
 const COLS = ['#F44336','#FF9800','#4CAF50','#2196F3','#9C27B0','#00BCD4','#795548','#607D8B','#E91E63','#FF5722'];
 
-function load(){try{return JSON.parse(localStorage.getItem(LS))||[]}catch(e){return[]}}
-function save(d){localStorage.setItem(LS,JSON.stringify(d))}
+function load(){try{const raw=localStorage.getItem(LS);if(!raw)return[];const data=JSON.parse(raw);if(!Array.isArray(data))throw new Error('数据格式错误');return data}catch(e){const bk=localStorage.getItem(LS+'_bak');if(bk){try{const restored=JSON.parse(bk);if(Array.isArray(restored)){localStorage.setItem(LS,bk);return restored}}catch(e2){}}return[]}}
+function save(d){const raw=JSON.stringify(d);localStorage.setItem(LS+'_bak',localStorage.getItem(LS)||'');localStorage.setItem(LS,raw)}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).substring(2,8)}
 function localDate(d){d=d||new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function toNum(v){const n=Number(v);return isNaN(n)?0:n}
+function getSrcId(name){if(!name)return null;const s=SRCS.find(x=>x.name===name);if(s)return s.id;if(name.startsWith('微信'))return 1;if(name==='支付宝')return 2;return null}
 
 const {createApp} = Vue;
 const app = createApp({
@@ -305,7 +306,7 @@ const app = createApp({
       statsYear:d.getFullYear(),statsMonth:d.getMonth()+1,
       modal:false,editId:null,f:{type:2,amtStr:'',catId:null,srcId:null,date:'',note:''},
       pick:null,island:{show:false,open:false,type:2,amt:0,src:'',catId:null,date:'',note:''},
-      dlgClear:false,msg:'',msgTimer:null,holdTimer:null,colors:COLS,showDebug:false,debugLog:'',listenAll:false,
+      dlgClear:false,msg:'',msgTimer:null,colors:COLS,showDebug:false,debugLog:'',serviceRunning:null,overlayOk:false,
     };
   },
   computed:{
@@ -314,12 +315,12 @@ const app = createApp({
 
     sumIn(){
       let s=0;const m=this.nowMonth;
-      this.list.forEach(t=>{if(t.date&&t.date.startsWith(m)&&t.type===1)s+=Number(t.amount||t.amt||0)});
+      this.list.forEach(t=>{if(t.date&&t.date.startsWith(m)&&t.type===1)s+=toNum(t.amount||t.amt)});
       return s.toFixed(2);
     },
     sumOut(){
       let s=0;const m=this.nowMonth;
-      this.list.forEach(t=>{if(t.date&&t.date.startsWith(m)&&t.type===2)s+=Number(t.amount||t.amt||0)});
+      this.list.forEach(t=>{if(t.date&&t.date.startsWith(m)&&t.type===2)s+=toNum(t.amount||t.amt)});
       return s.toFixed(2);
     },
     bal(){return parseFloat(this.sumIn)-parseFloat(this.sumOut)},
@@ -333,7 +334,7 @@ const app = createApp({
         .forEach(t=>{
           const d=t.date.split('T')[0];
           if(!g[d])g[d]={key:d,date:d,items:[],in:0,out:0};
-          const a=Number(t.amount||t.amt||0);
+          const a=toNum(t.amount||t.amt);
           g[d].items.push({...t,emoji:this.getEmoji(t.catId,t.type),sign:t.type===1?'+':'-',amt:a});
           if(t.type===1)g[d].in+=a;else g[d].out+=a;
         });
@@ -344,12 +345,12 @@ const app = createApp({
 
     statsSumIn(){
       let s=0;const m=this.statsMonthKey;
-      this.list.forEach(t=>{if(t.date&&t.date.startsWith(m)&&t.type===1)s+=Number(t.amount||t.amt||0)});
+      this.list.forEach(t=>{if(t.date&&t.date.startsWith(m)&&t.type===1)s+=toNum(t.amount||t.amt)});
       return s.toFixed(2);
     },
     statsSumOut(){
       let s=0;const m=this.statsMonthKey;
-      this.list.forEach(t=>{if(t.date&&t.date.startsWith(m)&&t.type===2)s+=Number(t.amount||t.amt||0)});
+      this.list.forEach(t=>{if(t.date&&t.date.startsWith(m)&&t.type===2)s+=toNum(t.amount||t.amt)});
       return s.toFixed(2);
     },
     statsBal(){return parseFloat(this.statsSumIn)-parseFloat(this.statsSumOut)},
@@ -359,7 +360,7 @@ const app = createApp({
     topCats(){
       const m=this.statsMonthKey;const map={};
       this.list.filter(t=>t.type===2&&t.date&&t.date.startsWith(m))
-        .forEach(t=>{const n=t.catName||'未分类';map[n]=(map[n]||0)+Number(t.amount||t.amt||0)});
+        .forEach(t=>{const n=t.catName||'未分类';map[n]=(map[n]||0)+toNum(t.amount||t.amt)});
       const total=Object.values(map).reduce((a,b)=>a+b,0);
       return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,10)
         .map(([name,amount])=>({name,amount:amount.toFixed(2),pct:total>0?Math.round(amount/total*100):0}));
@@ -367,7 +368,7 @@ const app = createApp({
     topInCats(){
       const m=this.statsMonthKey;const map={};
       this.list.filter(t=>t.type===1&&t.date&&t.date.startsWith(m))
-        .forEach(t=>{const n=t.catName||'未分类';map[n]=(map[n]||0)+Number(t.amount||t.amt||0)});
+        .forEach(t=>{const n=t.catName||'未分类';map[n]=(map[n]||0)+toNum(t.amount||t.amt)});
       const total=Object.values(map).reduce((a,b)=>a+b,0);
       return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,10)
         .map(([name,amount])=>({name,amount:amount.toFixed(2),pct:total>0?Math.round(amount/total*100):0}));
@@ -403,14 +404,22 @@ const app = createApp({
         }, data.raw || '');
       };
 
-      // 恢复全局监听状态
-      try {
-        if (window.NativeBridge && window.NativeBridge.getListenAll) {
-          this.listenAll = window.NativeBridge.getListenAll();
+      // 轮询等待 NativeBridge 注入
+      const tryBridge = () => {
+        if (window.NativeBridge) {
+          try {
+            this.serviceRunning = window.NativeBridge.isServiceRunning ? window.NativeBridge.isServiceRunning() : null;
+            this.overlayOk = window.NativeBridge.hasOverlayPermission ? window.NativeBridge.hasOverlayPermission() : false;
+            if (!this.serviceRunning) {
+              this.debugLog = '⚠ 通知监听服务未运行！\n请在 设置→通知监听权限 中重新授权\n' + this.debugLog;
+            }
+            if (window.NativeBridge.start) window.NativeBridge.start();
+          } catch(e) {}
+        } else {
+          setTimeout(tryBridge, 500);
         }
-      } catch(e) {}
-
-      try { if (window.NativeBridge && window.NativeBridge.start) { window.NativeBridge.start(); } } catch(e) {}
+      };
+      setTimeout(tryBridge, 300);
     },
 
     reload(){this.list=load()},
@@ -431,7 +440,15 @@ const app = createApp({
 
     selectPick(o){if(this.pick==='cat'){this.f.catId=o.id}else{this.f.srcId=o.id};this.pick=null},
 
-    switchTab(t){this.tab=t;if(t===1)this.reload()},
+    switchTab(t){this.tab=t;if(t===1)this.reload();if(t===2)this.refreshStatus()},
+    refreshStatus(){
+      try{
+        if(window.NativeBridge){
+          this.serviceRunning = window.NativeBridge.isServiceRunning ? window.NativeBridge.isServiceRunning() : null;
+          this.overlayOk = window.NativeBridge.hasOverlayPermission ? window.NativeBridge.hasOverlayPermission() : false;
+        }
+      }catch(e){}
+    },
     prevM(){this.statsMonth--;if(this.statsMonth<1){this.statsMonth=12;this.statsYear--};this.reload()},
     nextM(){this.statsMonth++;if(this.statsMonth>12){this.statsMonth=1;this.statsYear++};this.reload()},
 
@@ -443,21 +460,12 @@ const app = createApp({
       try { if(window.NativeBridge&&window.NativeBridge.openOverlaySettings) { window.NativeBridge.openOverlaySettings(); } }
       catch(e) { this.toast('请在系统设置→显示在其他应用上层中开启'); }
     },
-    openAccessibilitySettings(){
-      try { if(window.NativeBridge&&window.NativeBridge.openAccessibilitySettings) { window.NativeBridge.openAccessibilitySettings(); } }
-      catch(e) { this.toast('请在系统设置→无障碍中开启'); }
-    },
     loadDebugLog(){
       try {
         if(window.NativeBridge&&window.NativeBridge.getDebugLog) {
           this.debugLog = window.NativeBridge.getDebugLog();
         } else { this.debugLog = '(非原生环境，无日志)'; }
       } catch(e) { this.debugLog = '获取日志失败'; }
-    },
-    toggleAllListen(){
-      this.listenAll = !this.listenAll;
-      try { if(window.NativeBridge&&window.NativeBridge.toggleListenAll) { window.NativeBridge.toggleListenAll(); } }
-      catch(e) {}
     },
     doClear(){save([]);this.reload();this.dlgClear=false;this.toast('数据已清除')},
 
@@ -474,7 +482,7 @@ const app = createApp({
     confirmIsland(){
       const a=Number(this.island.amt);if(isNaN(a)||a<=0)return this.toast('请输入有效金额');
       const c=CATS.find(x=>x.id===this.island.catId);
-      const list=load();list.push({id:uid(),type:this.island.type,amount:a,catId:this.island.catId,catName:c?c.name:'',srcId:null,srcName:this.island.src,date:this.island.date,note:this.island.note});
+      const list=load();list.push({id:uid(),type:this.island.type,amount:a,catId:this.island.catId,catName:c?c.name:'',srcId:getSrcId(this.island.src),srcName:this.island.src,date:this.island.date,note:this.island.note});
       save(list);this.reload();this.island.show=false;this.toast('记账成功');
     },
   },
