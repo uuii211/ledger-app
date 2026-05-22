@@ -1,0 +1,6 @@
+{
+  "appId": "com.ledger.jzb",
+  "appName": "记账宝",
+  "webDir": "www",
+  "bundledWebRuntime": false
+}

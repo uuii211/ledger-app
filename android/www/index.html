@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -172,7 +172,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
     <div class="tx-list">
       <div class="date-group" v-for="g in groups" :key="g.key">
         <div class="date-head"><span class="date-text">{{ g.date }}</span><span class="date-sum">收入 {{ g.in }} 支出 {{ g.out }}</span></div>
-        <div class="tx-row" v-for="t in g.items" :key="t.id" @click="editTx(t)">
+        <div class="tx-row" v-for="t in g.items" :key="t.id" @click="editTx(t)" @touchstart="holdTimer = setTimeout(() => delTx(t.id), 400)" @touchend="clearTimeout(holdTimer)" @touchmove="clearTimeout(holdTimer)">
           <div class="tx-left">
             <div class="tx-icon" :style="{ background: t.type === 1 ? '#e8f5e9' : '#ffebee' }">{{ t.emoji }}</div>
             <div><div class="tx-cat">{{ t.catName || '未分类' }}</div><div class="tx-meta">{{ t.srcName }}{{ t.note ? ' · ' + t.note : '' }}</div></div>
@@ -222,7 +222,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
       <div class="set-row" @click="dlgClear = true"><span>清除所有数据</span><span style="color:#F44336;font-size:13px">危险操作</span></div>
     </div>
     <div class="set-card">
-      <div class="set-row"><span>版本</span><span style="color:#999">2.0.4</span></div>
+      <div class="set-row"><span>版本</span><span style="color:#999">2.0</span></div>
       <div class="set-row"><span>记录总数</span><span style="color:#999">{{ list.length }} 条</span></div>
       <div class="set-row"><span>数据存储</span><span style="color:#4CAF50">手机本地 · 无需联网</span></div>
     </div>
@@ -290,12 +290,10 @@ const SRCS = [
 ];
 const COLS = ['#F44336','#FF9800','#4CAF50','#2196F3','#9C27B0','#00BCD4','#795548','#607D8B','#E91E63','#FF5722'];
 
-function load(){try{const raw=localStorage.getItem(LS);if(!raw)return[];const data=JSON.parse(raw);if(!Array.isArray(data))throw new Error('数据格式错误');return data}catch(e){const bk=localStorage.getItem(LS+'_bak');if(bk){try{const restored=JSON.parse(bk);if(Array.isArray(restored)){localStorage.setItem(LS,bk);return restored}}catch(e2){}}return[]}}
-function save(d){const raw=JSON.stringify(d);localStorage.setItem(LS+'_bak',localStorage.getItem(LS)||'');localStorage.setItem(LS,raw)}
+function load(){try{return JSON.parse(localStorage.getItem(LS))||[]}catch(e){return[]}}
+function save(d){localStorage.setItem(LS,JSON.stringify(d))}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).substring(2,8)}
 function localDate(d){d=d||new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
-function toNum(v){const n=Number(v);return isNaN(n)?0:n}
-function getSrcId(name){if(!name)return null;const s=SRCS.find(x=>x.name===name);if(s)return s.id;if(name.startsWith('微信'))return 1;if(name==='支付宝')return 2;return null}
 
 const {createApp} = Vue;
 const app = createApp({
@@ -306,7 +304,7 @@ const app = createApp({
       statsYear:d.getFullYear(),statsMonth:d.getMonth()+1,
       modal:false,editId:null,f:{type:2,amtStr:'',catId:null,srcId:null,date:'',note:''},
       pick:null,island:{show:false,open:false,type:2,amt:0,src:'',catId:null,date:'',note:''},
-      dlgClear:false,msg:'',msgTimer:null,colors:COLS,showDebug:false,debugLog:'',serviceRunning:null,overlayOk:false,
+      dlgClear:false,msg:'',msgTimer:null,holdTimer:null,colors:COLS,showDebug:false,debugLog:'',serviceRunning:null,overlayOk:false,
     };
   },
   computed:{
@@ -315,12 +313,12 @@ const app = createApp({
 
     sumIn(){
       let s=0;const m=this.nowMonth;
-      this.list.forEach(t=>{if(t.date&&t.date.startsWith(m)&&t.type===1)s+=toNum(t.amount||t.amt)});
+      this.list.forEach(t=>{if(t.date&&t.date.startsWith(m)&&t.type===1)s+=Number(t.amount||t.amt||0)});
       return s.toFixed(2);
     },
     sumOut(){
       let s=0;const m=this.nowMonth;
-      this.list.forEach(t=>{if(t.date&&t.date.startsWith(m)&&t.type===2)s+=toNum(t.amount||t.amt)});
+      this.list.forEach(t=>{if(t.date&&t.date.startsWith(m)&&t.type===2)s+=Number(t.amount||t.amt||0)});
       return s.toFixed(2);
     },
     bal(){return parseFloat(this.sumIn)-parseFloat(this.sumOut)},
@@ -334,7 +332,7 @@ const app = createApp({
         .forEach(t=>{
           const d=t.date.split('T')[0];
           if(!g[d])g[d]={key:d,date:d,items:[],in:0,out:0};
-          const a=toNum(t.amount||t.amt);
+          const a=Number(t.amount||t.amt||0);
           g[d].items.push({...t,emoji:this.getEmoji(t.catId,t.type),sign:t.type===1?'+':'-',amt:a});
           if(t.type===1)g[d].in+=a;else g[d].out+=a;
         });
@@ -345,12 +343,12 @@ const app = createApp({
 
     statsSumIn(){
       let s=0;const m=this.statsMonthKey;
-      this.list.forEach(t=>{if(t.date&&t.date.startsWith(m)&&t.type===1)s+=toNum(t.amount||t.amt)});
+      this.list.forEach(t=>{if(t.date&&t.date.startsWith(m)&&t.type===1)s+=Number(t.amount||t.amt||0)});
       return s.toFixed(2);
     },
     statsSumOut(){
       let s=0;const m=this.statsMonthKey;
-      this.list.forEach(t=>{if(t.date&&t.date.startsWith(m)&&t.type===2)s+=toNum(t.amount||t.amt)});
+      this.list.forEach(t=>{if(t.date&&t.date.startsWith(m)&&t.type===2)s+=Number(t.amount||t.amt||0)});
       return s.toFixed(2);
     },
     statsBal(){return parseFloat(this.statsSumIn)-parseFloat(this.statsSumOut)},
@@ -360,7 +358,7 @@ const app = createApp({
     topCats(){
       const m=this.statsMonthKey;const map={};
       this.list.filter(t=>t.type===2&&t.date&&t.date.startsWith(m))
-        .forEach(t=>{const n=t.catName||'未分类';map[n]=(map[n]||0)+toNum(t.amount||t.amt)});
+        .forEach(t=>{const n=t.catName||'未分类';map[n]=(map[n]||0)+Number(t.amount||t.amt||0)});
       const total=Object.values(map).reduce((a,b)=>a+b,0);
       return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,10)
         .map(([name,amount])=>({name,amount:amount.toFixed(2),pct:total>0?Math.round(amount/total*100):0}));
@@ -368,7 +366,7 @@ const app = createApp({
     topInCats(){
       const m=this.statsMonthKey;const map={};
       this.list.filter(t=>t.type===1&&t.date&&t.date.startsWith(m))
-        .forEach(t=>{const n=t.catName||'未分类';map[n]=(map[n]||0)+toNum(t.amount||t.amt)});
+        .forEach(t=>{const n=t.catName||'未分类';map[n]=(map[n]||0)+Number(t.amount||t.amt||0)});
       const total=Object.values(map).reduce((a,b)=>a+b,0);
       return Object.entries(map).sort((a,b)=>b[1]-a[1]).slice(0,10)
         .map(([name,amount])=>({name,amount:amount.toFixed(2),pct:total>0?Math.round(amount/total*100):0}));
@@ -391,13 +389,11 @@ const app = createApp({
       if (window._islandInited) return;
       window._islandInited = true;
 
-      window.quickAddHandler = () => { if (!this.modal) this.openAdd(); };
+      window.quickAddHandler = () => { this.openAdd(); };
 
       window.pendingTxHandler = (data) => {
         if (!data || !data.source) return;
-        // 去重：金额转为数字比较，防止 '' === 0 为 false 的 bug
-        const amt = Number(data.amount) || 0;
-        if (this.island.show && this.island.src === data.source && Number(this.island.amt) === amt) return;
+        const amt = data.amount || 0;
         this.showIsland({
           sourceName: data.source,
           amount: amt,
@@ -476,7 +472,7 @@ const app = createApp({
       const needAmt = parsed.needManualAmount || !parsed.amount || parsed.amount <= 0;
       this.island={
         show:true, open: needAmt,
-        type:parsed.type, src:parsed.sourceName, amt: Number(parsed.amount) || 0,
+        type:parsed.type, src:parsed.sourceName, amt: parsed.amount || '',
         catId:cat?cat.id:null, date:localDate(), note:(raw||'').substring(0,80),
         needAmount: needAmt
       };
@@ -484,7 +480,7 @@ const app = createApp({
     confirmIsland(){
       const a=Number(this.island.amt);if(isNaN(a)||a<=0)return this.toast('请输入有效金额');
       const c=CATS.find(x=>x.id===this.island.catId);
-      const list=load();list.push({id:uid(),type:this.island.type,amount:a,catId:this.island.catId,catName:c?c.name:'',srcId:getSrcId(this.island.src),srcName:this.island.src,date:this.island.date,note:this.island.note});
+      const list=load();list.push({id:uid(),type:this.island.type,amount:a,catId:this.island.catId,catName:c?c.name:'',srcId:null,srcName:this.island.src,date:this.island.date,note:this.island.note});
       save(list);this.reload();this.island.show=false;this.toast('记账成功');
     },
   },

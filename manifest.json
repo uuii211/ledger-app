@@ -1,0 +1,27 @@
+{
+    "name": "记账宝",
+    "appid": "__UNI__LEDGER",
+    "versionName": "1.0.0",
+    "versionCode": 1,
+    "vueVersion": "3",
+    "permissions": {
+        "android": [
+            "android.permission.READ_SMS",
+            "android.permission.RECEIVE_SMS",
+            "android.permission.BIND_NOTIFICATION_LISTENER_SERVICE",
+            "android.permission.INTERNET"
+        ]
+    },
+    "app-plus": {
+        "distribute": {
+            "android": {
+                "permissions": [
+                    "<uses-permission android:name=\"android.permission.READ_SMS\"/>",
+                    "<uses-permission android:name=\"android.permission.RECEIVE_SMS\"/>",
+                    "<uses-permission android:name=\"android.permission.BIND_NOTIFICATION_LISTENER_SERVICE\"/>",
+                    "<uses-permission android:name=\"android.permission.INTERNET\"/>"
+                ]
+            }
+        }
+    }
+}

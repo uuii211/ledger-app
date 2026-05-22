@@ -26,6 +26,10 @@ public class MainActivity extends BridgeActivity {
 
     private static final String CHAN_ID = "quick_add";
     private static final int NOTIFY_ID = 2001;
+    private static final String ACTION_QUICK_ADD = "com.ledger.QUICK_ADD";
+    private static final String ACTION_CONFIRM_TX = "com.ledger.CONFIRM_TX";
+    private static final int DELAY_FIRST = 800;
+    private static final int DELAY_RETRY = 2500;
     private MediaSessionCompat mediaSession;
     private NotificationManager nm;
 
@@ -52,73 +56,61 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void checkPending() {
-        List<PaymentListenerService.PendingTx> list = PaymentListenerService.drainPending();
-        if (list == null || list.isEmpty()) return;
-        PaymentListenerService.PendingTx tx = list.get(list.size() - 1);
-        WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+        PaymentListenerService.PendingTx tx = PaymentListenerService.popLatest();
+        if (tx == null) return;
+        WebView wv = getWebView();
         if (wv == null) return;
-        try {
-            JSONObject json = new JSONObject();
-            json.put("source", tx.source);
-            json.put("amount", tx.amount);
-            json.put("type", tx.type);
-            json.put("raw", tx.raw != null ? tx.raw : "");
-            String js = "if(window.pendingTxHandler)window.pendingTxHandler(" + json.toString() + ")";
-            wv.postDelayed(() -> wv.evaluateJavascript(js, null), 500);
-        } catch (Exception e) {}
+        doSend(wv, tx.source, tx.amount, tx.type, tx.raw, DELAY_FIRST);
+        wv.postDelayed(() -> doSend(wv, tx.source, tx.amount, tx.type, tx.raw, 0), DELAY_RETRY);
     }
 
     private void handleIntent(Intent intent) {
         if (intent == null) return;
         String action = intent.getAction();
 
-        if ("com.ledger.QUICK_ADD".equals(action)) {
+        if (ACTION_QUICK_ADD.equals(action)) {
             triggerQuickAdd();
-        } else if ("com.ledger.CONFIRM_TX".equals(action)) {
+        } else if (ACTION_CONFIRM_TX.equals(action)) {
             String src = intent.getStringExtra("source");
             double amt = intent.getDoubleExtra("amount", -1);
             int type = intent.getIntExtra("type", -1);
             String raw = intent.getStringExtra("raw");
-
-            if ((src == null || amt < 0) && PaymentListenerService.lastTx != null) {
-                PaymentListenerService.PendingTx tx = PaymentListenerService.lastTx;
-                src = tx.source; amt = tx.amount; type = tx.type; raw = tx.raw;
-            }
             if (src == null) return;
 
-            final String fSrc = src;
-            final double fAmt = amt;
-            final int fType = type;
-            final String fRaw = raw;
-
-            WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-            if (wv != null) {
-                try {
-                    JSONObject json = new JSONObject();
-                    json.put("source", fSrc);
-                    json.put("amount", fAmt);
-                    json.put("type", fType);
-                    json.put("raw", fRaw != null ? fRaw : "");
-                    String js = "if(window.pendingTxHandler)window.pendingTxHandler(" + json.toString() + ")";
-                    wv.postDelayed(() -> wv.evaluateJavascript(js, null), 300);
-                } catch (Exception e) {}
-            }
+            WebView wv = getWebView();
+            if (wv == null) return;
+            doSend(wv, src, amt, type, raw, DELAY_FIRST);
+            wv.postDelayed(() -> doSend(wv, src, amt, type, raw, 0), DELAY_RETRY);
         }
+    }
+
+    private void doSend(WebView wv, String src, double amt, int type, String raw, int delay) {
+        try {
+            JSONObject json = new JSONObject();
+            json.put("source", src);
+            json.put("amount", amt);
+            json.put("type", type);
+            json.put("raw", raw != null ? raw : "");
+            String js = "if(window.pendingTxHandler)window.pendingTxHandler(" + json.toString() + ")";
+            if (delay > 0) wv.postDelayed(() -> wv.evaluateJavascript(js, null), delay);
+            else wv.post(() -> wv.evaluateJavascript(js, null));
+        } catch (Exception e) {}
+    }
+
+    private WebView getWebView() {
+        return getBridge() != null ? getBridge().getWebView() : null;
     }
 
     private void triggerQuickAdd() {
-        WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-        if (wv != null) {
-            wv.post(() -> wv.evaluateJavascript(
-                "if(window.quickAddHandler)window.quickAddHandler()", null));
-        }
+        WebView wv = getWebView();
+        if (wv == null) return;
+        String js = "if(window.quickAddHandler)window.quickAddHandler()";
+        wv.postDelayed(() -> wv.evaluateJavascript(js, null), DELAY_FIRST);
     }
 
     private void registerJsBridge() {
-        WebView wv = getBridge() != null ? getBridge().getWebView() : null;
-        if (wv != null) {
-            wv.addJavascriptInterface(new AppBridge(), "NativeBridge");
-        }
+        WebView wv = getWebView();
+        if (wv != null) wv.addJavascriptInterface(new AppBridge(), "NativeBridge");
     }
 
     private void createChannel() {
@@ -151,14 +143,17 @@ public class MainActivity extends BridgeActivity {
             });
         }
         @JavascriptInterface
-        public void openAccessibilitySettings() {
-            runOnUiThread(() -> startActivity(
-                new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
-        }
-        @JavascriptInterface
         public boolean hasOverlayPermission() {
             return Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
                 Settings.canDrawOverlays(MainActivity.this);
+        }
+        @JavascriptInterface
+        public boolean isServiceRunning() {
+            return PaymentListenerService.isConnected;
+        }
+        @JavascriptInterface
+        public long getLastConnectTime() {
+            return PaymentListenerService.lastConnectTime;
         }
         @JavascriptInterface
         public String getDebugLog() {
@@ -167,25 +162,11 @@ public class MainActivity extends BridgeActivity {
                     .getString("debug_log", "暂无日志");
             } catch (Exception e) { return "读取失败"; }
         }
-        @JavascriptInterface
-        public boolean getListenAll() {
-            try {
-                return getSharedPreferences("ledger_state", Context.MODE_PRIVATE)
-                    .getBoolean("listen_all", false);
-            } catch (Exception e) { return false; }
-        }
-        @JavascriptInterface
-        public void toggleListenAll() {
-            try {
-                SharedPreferences p = getSharedPreferences("ledger_state", Context.MODE_PRIVATE);
-                boolean cur = p.getBoolean("listen_all", false);
-                p.edit().putBoolean("listen_all", !cur).apply();
-            } catch (Exception e) {}
-        }
     }
 
     private void doStart() {
-        if (mediaSession != null) return;
+        try { if (mediaSession != null && mediaSession.isActive()) return; }
+        catch (Exception e) { mediaSession = null; }
         mediaSession = new MediaSessionCompat(this, "LedgerQA");
         mediaSession.setFlags(
             MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS |
@@ -207,7 +188,7 @@ public class MainActivity extends BridgeActivity {
         if (Build.VERSION.SDK_INT >= 31) pif |= PendingIntent.FLAG_MUTABLE;
         PendingIntent piOpen = PendingIntent.getActivity(this, 0, open, pif);
         Intent add = new Intent(this, MainActivity.class);
-        add.setAction("com.ledger.QUICK_ADD");
+        add.setAction(ACTION_QUICK_ADD);
         PendingIntent piAdd = PendingIntent.getActivity(this, 1, add, pif);
         Notification notif = new NotificationCompat.Builder(this, CHAN_ID)
             .setSmallIcon(R.drawable.ic_notify)
