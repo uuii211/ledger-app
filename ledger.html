@@ -393,8 +393,12 @@ const app = createApp({
 
       window.quickAddHandler = () => { if (!this.modal) this.openAdd(); };
 
+      window._confirmed = {};
+
       window.pendingTxHandler = (data) => {
         if (!data || !data.source) return;
+        const key = data.source + '_' + (Number(data.amount)||0) + '_' + (data.type||2);
+        if (window._confirmed[key]) return;
         // 去重：金额转为数字比较，防止 '' === 0 为 false 的 bug
         const amt = Number(data.amount) || 0;
         if (this.island.show && this.island.src === data.source && Number(this.island.amt) === amt) return;
@@ -404,6 +408,7 @@ const app = createApp({
           type: data.type || 2,
           needManualAmount: amt <= 0
         }, data.raw || '');
+        window._confirmed[key] = true;
       };
 
       // 轮询等待 NativeBridge 注入
@@ -428,7 +433,7 @@ const app = createApp({
     getEmoji(catId,type){const c=CATS.find(x=>x.id===catId);return c?c.emoji:(type===1?'💰':'💳')},
 
     openAdd(){this.editId=null;this.f={type:2,amtStr:'',catId:null,srcId:null,date:localDate(),note:''};this.modal=true},
-    editTx(t){this.editId=t.id;const d=t.date.split('T')[0];this.f={type:t.type,amtStr:String(t.amount),catId:t.catId,srcId:t.srcId,date:d,note:t.note||''};this.modal=true},
+    editTx(t){this.editId=t.id;const d=t.date?t.date.split('T')[0]:localDate();this.f={type:t.type,amtStr:String(t.amount),catId:t.catId,srcId:t.srcId,date:d,note:t.note||''};this.modal=true},
     closeModal(){this.modal=false},
     saveTx(){
       const a=parseFloat(this.f.amtStr);if(isNaN(a)||a<=0)return this.toast('请输入有效金额');
@@ -469,7 +474,7 @@ const app = createApp({
         } else { this.debugLog = '(非原生环境，无日志)'; }
       } catch(e) { this.debugLog = '获取日志失败'; }
     },
-    doClear(){save([]);this.reload();this.dlgClear=false;this.toast('数据已清除')},
+    doClear(){save([]);try{localStorage.removeItem(LS+'_bak')}catch(e){}this.reload();this.dlgClear=false;this.toast('数据已清除')},
 
     showIsland(parsed,raw){
       const cat=CATS.find(c=>c.type===parsed.type);

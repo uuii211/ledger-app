@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -26,6 +27,7 @@ public class PaymentListenerService extends NotificationListenerService {
     private static final String CHAN_FG = "listener_fg";
     private static final String PREFS = "ledger_state";
     private static final int FG_NOTIFY_ID = 3001;
+    private final AtomicInteger notifCounter = new AtomicInteger(0);
     private NotificationManager nm;
     private SharedPreferences prefs;
 
@@ -302,7 +304,8 @@ public class PaymentListenerService extends NotificationListenerService {
         i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         int pif = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= 31) pif |= PendingIntent.FLAG_MUTABLE;
-        PendingIntent pi = PendingIntent.getActivity(this, (int)(System.nanoTime() % 100000), i, pif);
+        int id = notifCounter.incrementAndGet();
+        PendingIntent pi = PendingIntent.getActivity(this, id, i, pif);
 
         Notification n = new NotificationCompat.Builder(this, CHAN_ID)
             .setSmallIcon(R.drawable.ic_notify)
@@ -311,7 +314,7 @@ public class PaymentListenerService extends NotificationListenerService {
             .setContentIntent(pi).setAutoCancel(true).setColor(color)
             .setPriority(NotificationCompat.PRIORITY_HIGH).setDefaults(NotificationCompat.DEFAULT_VIBRATE)
             .build();
-        nm.notify((int)(System.nanoTime() % 100000), n);
+        nm.notify(id, n);
     }
 
     private void appendLog(String msg) {

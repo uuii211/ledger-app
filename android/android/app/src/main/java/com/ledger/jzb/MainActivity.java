@@ -29,7 +29,6 @@ public class MainActivity extends BridgeActivity {
     private static final String ACTION_QUICK_ADD = "com.ledger.QUICK_ADD";
     private static final String ACTION_CONFIRM_TX = "com.ledger.CONFIRM_TX";
     private static final int DELAY_FIRST = 800;
-    private static final int DELAY_RETRY = 2500;
     private MediaSessionCompat mediaSession;
     private NotificationManager nm;
 
@@ -56,12 +55,14 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void checkPending() {
-        PaymentListenerService.PendingTx tx = PaymentListenerService.popLatest();
-        if (tx == null) return;
+        List<PaymentListenerService.PendingTx> list = PaymentListenerService.drainPending();
+        if (list == null || list.isEmpty()) return;
         WebView wv = getWebView();
         if (wv == null) return;
-        doSend(wv, tx.source, tx.amount, tx.type, tx.raw, DELAY_FIRST);
-        wv.postDelayed(() -> doSend(wv, tx.source, tx.amount, tx.type, tx.raw, 0), DELAY_RETRY);
+        for (int i = 0; i < list.size(); i++) {
+            PaymentListenerService.PendingTx tx = list.get(i);
+            doSend(wv, tx.source, tx.amount, tx.type, tx.raw, DELAY_FIRST + i * 200);
+        }
     }
 
     private void handleIntent(Intent intent) {
@@ -79,8 +80,7 @@ public class MainActivity extends BridgeActivity {
 
             WebView wv = getWebView();
             if (wv == null) return;
-            doSend(wv, src, amt, type, raw, DELAY_FIRST);
-            wv.postDelayed(() -> doSend(wv, src, amt, type, raw, 0), DELAY_RETRY);
+            doSend(wv, src, amt, type, raw, 600);
         }
     }
 
