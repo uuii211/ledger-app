@@ -212,6 +212,9 @@ public class PaymentListenerService extends NotificationListenerService {
             return null;
         }
 
+        // 过滤银行广告/促销/复盘通知
+        if (isNotRealTransaction(text)) return null;
+
         String bank = "银行卡";
         if (text.contains("招商")) bank = "招商银行";
         else if (text.contains("工商")) bank = "工商银行";
@@ -261,6 +264,19 @@ public class PaymentListenerService extends NotificationListenerService {
             return new PendingTx(bank, 0, 1, text);
         }
         return null;
+    }
+
+    private boolean isNotRealTransaction(String text) {
+        // 银行促销/广告/活动关键词（不是真实收支）
+        String[] adKeywords = {"奖品", "返现券", "福利", "复盘", "优惠券", "加息券",
+            "免息券", "礼遇", "活动", "抽奖", "红包雨", "领券", "免单",
+            "已发放", "立即领取", "点击查看", "点击领取", "限时", "秒杀"};
+        for (String kw : adKeywords) {
+            if (text.contains(kw)) return true;
+        }
+        // "[数字条]动账通知" 是摘要，不是单笔交易
+        if (text.matches(".*\\[\\d+条\\].*")) return true;
+        return false;
     }
 
     private PendingTx match(String text, String regex, String source, int type) {
