@@ -41,16 +41,24 @@ public class MainActivity extends BridgeActivity {
         handleIntent(getIntent());
     }
 
+    private boolean pendingFromNotification = false;
+
     @Override
     public void onResume() {
         super.onResume();
         registerJsBridge();
-        checkPending();
+        if (pendingFromNotification) {
+            checkPending();
+            pendingFromNotification = false;
+        }
     }
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (intent != null && (ACTION_CONFIRM_TX.equals(intent.getAction()) || ACTION_QUICK_ADD.equals(intent.getAction()))) {
+            pendingFromNotification = true;
+        }
         handleIntent(intent);
     }
 
@@ -73,7 +81,7 @@ public class MainActivity extends BridgeActivity {
             triggerQuickAdd();
         } else if (ACTION_CONFIRM_TX.equals(action)) {
             String src = intent.getStringExtra("source");
-            double amt = intent.getDoubleExtra("amount", -1);
+            double amt = intent.getDoubleExtra("amount", 0);
             int type = intent.getIntExtra("type", -1);
             String raw = intent.getStringExtra("raw");
             if (src == null) return;
