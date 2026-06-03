@@ -175,7 +175,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
         <div class="date-head"><span class="date-text">{{ g.date }}</span><span class="date-sum">收入 {{ g.in }} 支出 {{ g.out }}</span></div>
         <div class="tx-row" v-for="t in g.items" :key="t.id" @click="editTx(t)">
           <div class="tx-left">
-            <div class="tx-icon" :style="{ background: t.type === 1 ? '#e8f5e9' : '#ffebee' }">{{ t.emoji }}</div>
+            <div class="tx-icon" :style="{ background: t.type === 1 ? '#e8f5e9' : '#ffebee' }">
+              <img v-if="t.icon" :src="t.icon" style="width:24px;height:24px;object-fit:contain" @error="$event.target.style.display='none'" />
+              <template v-else>{{ t.emoji || (t.type===1?'💰':'💳') }}</template>
+            </div>
             <div><div class="tx-cat">{{ t.catName || '未分类' }}</div><div class="tx-meta">{{ t.srcName }}{{ t.note ? ' · ' + t.note : '' }}</div></div>
           </div>
           <div :class="'tx-amount ' + (t.type === 1 ? 'in' : 'out')">{{ t.sign }}¥{{ t.amt }}</div>
@@ -280,10 +283,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
 <script>
 const LS = 'ledger_txs';
 const CATS = [
-  {id:1,name:'餐饮',type:2,emoji:'🍽'},{id:2,name:'交通',type:2,emoji:'🚗'},{id:3,name:'购物',type:2,emoji:'🛒'},{id:4,name:'娱乐',type:2,emoji:'🎮'},
-  {id:5,name:'住房',type:2,emoji:'🏠'},{id:6,name:'医疗',type:2,emoji:'💊'},{id:7,name:'教育',type:2,emoji:'📚'},{id:8,name:'人情',type:2,emoji:'🎁'},
-  {id:9,name:'日用',type:2,emoji:'🧴'},{id:10,name:'其他支出',type:2,emoji:'💸'},{id:11,name:'工资',type:1,emoji:'💰'},{id:12,name:'理财',type:1,emoji:'📈'},
-  {id:13,name:'兼职',type:1,emoji:'💼'},{id:14,name:'退款',type:1,emoji:'↩'},{id:15,name:'其他收入',type:1,emoji:'💵'}
+  {id:1,name:'餐饮',type:2,icon:'images/餐饮.svg'},{id:2,name:'交通',type:2,icon:'images/交通费.svg'},
+  {id:3,name:'购物',type:2,icon:'images/购物.svg'},{id:4,name:'娱乐',type:2,icon:'images/娱乐.svg'},
+  {id:5,name:'住房',type:2,icon:'images/住房.svg'},{id:6,name:'医疗',type:2,icon:'images/医疗机构.svg'},
+  {id:7,name:'教育',type:2,icon:'images/教育.svg'},{id:8,name:'人情',type:2,icon:''},
+  {id:9,name:'日用',type:2,icon:'images/日用品.svg'},{id:10,name:'其他支出',type:2,icon:''},
+  {id:11,name:'工资',type:1,icon:'images/我的工资.svg'},{id:12,name:'理财',type:1,icon:'images/理财.svg'},
+  {id:13,name:'兼职',type:1,icon:'images/兼职.svg'},{id:14,name:'退款',type:1,icon:'images/退款.svg'},
+  {id:15,name:'其他收入',type:1,icon:'images/其它收入.svg'}
 ];
 const SRCS = [
   {id:1,name:'微信支付'},{id:2,name:'支付宝'},{id:3,name:'工商银行'},{id:4,name:'建设银行'},{id:5,name:'农业银行'},
@@ -336,7 +343,7 @@ const app = createApp({
           const d=t.date.split('T')[0];
           if(!g[d])g[d]={key:d,date:d,items:[],in:0,out:0};
           const a=toNum(t.amount||t.amt);
-          g[d].items.push({...t,emoji:this.getEmoji(t.catId,t.type),sign:t.type===1?'+':'-',amt:a});
+          g[d].items.push({...t,emoji:this.getEmoji(t.catId,t.type),icon:this.getIconPath(t.catId),sign:t.type===1?'+':'-',amt:a});
           if(t.type===1)g[d].in+=a;else g[d].out+=a;
         });
       const r=Object.values(g);
@@ -431,7 +438,8 @@ const app = createApp({
     },
 
     reload(){this.list=load()},
-    getEmoji(catId,type){const c=CATS.find(x=>x.id===catId);return c?c.emoji:(type===1?'💰':'💳')},
+    getEmoji(catId,type){const c=CATS.find(x=>x.id===catId);return c?c.icon||c.emoji||(type===1?'💰':'💳'):(type===1?'💰':'💳')},
+    getIconPath(catId){const c=CATS.find(x=>x.id===catId);return c?c.icon||'':''},
 
     openAdd(){this.editId=null;this.f={type:2,amtStr:'',catId:null,srcId:null,date:localDate(),note:''};this.modal=true},
     editTx(t){this.editId=t.id;const d=t.date?t.date.split('T')[0]:localDate();this.f={type:t.type,amtStr:String(t.amount),catId:t.catId,srcId:t.srcId,date:d,note:t.note||''};this.modal=true},
