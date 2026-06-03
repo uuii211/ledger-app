@@ -126,6 +126,8 @@ public class PaymentListenerService extends NotificationListenerService {
             if (s != null) sb.append(s).append(" ");
             if (b != null) sb.append(b).append(" ");
             if (sbn.getNotification().tickerText != null) sb.append(sbn.getNotification().tickerText).append(" ");
+            CharSequence[] lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES);
+            if (lines != null) { for (CharSequence l : lines) if (l != null) sb.append(l).append(" "); }
             String text = sb.toString().trim();
             if (text.isEmpty()) return;
 
