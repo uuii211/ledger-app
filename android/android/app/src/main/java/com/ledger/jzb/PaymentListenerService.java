@@ -274,8 +274,8 @@ public class PaymentListenerService extends NotificationListenerService {
         // 银行促销/广告/活动关键词（不是真实收支）
         String[] adKeywords = {"奖品", "返现券", "返现金", "福利", "复盘", "优惠券", "加息券",
             "免息券", "礼遇", "活动", "抽奖", "红包雨", "领券", "免单",
-            "已发放", "立即领取", "点击查看", "点击领取", "限时", "秒杀",
-            "消费返", "至高抽", "抽单笔", "分行", "至高", "享好礼", "年货节", "抽好礼"};
+            "立即领取", "点击查看", "点击领取", "限时", "秒杀",
+            "消费返", "至高抽", "抽单笔", "享好礼", "年货节", "抽好礼"};
         for (String kw : adKeywords) {
             if (text.contains(kw)) return true;
         }
