@@ -152,7 +152,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei
           <div class="island-row"><span class="lbl">备注</span><input v-model="island.note" placeholder="选填"></div>
         </div>
         <div class="island-actions">
-          <button class="btn-no" @click="island.show = false">忽略</button>
+          <button class="btn-no" @click="dismissIsland">忽略</button>
           <button class="btn-ok" @click="confirmIsland">确认记账</button>
         </div>
       </template>
@@ -315,6 +315,7 @@ const app = createApp({
       modal:false,editId:null,f:{type:2,amtStr:'',catId:null,srcId:null,date:'',note:''},
       pick:null,island:{show:false,open:false,type:2,amt:0,src:'',catId:null,date:'',note:''},
       dlgClear:false,msg:'',msgTimer:null,colors:COLS,showDebug:false,debugLog:'',serviceRunning:null,overlayOk:false,
+      pendingQueue:[],
     };
   },
   computed:{
@@ -410,6 +411,10 @@ const app = createApp({
         // 去重：金额转为数字比较，防止 '' === 0 为 false 的 bug
         const amt = Number(data.amount) || 0;
         if (this.island.show && this.island.src === data.source && Number(this.island.amt) === amt) return;
+        if (this.island.show) {
+          this.pendingQueue.push({sourceName: data.source, amount: amt, type: data.type||2, needManualAmount: amt<=0, raw: data.raw||''});
+          return;
+        }
         this.showIsland({
           sourceName: data.source,
           amount: amt,
@@ -499,8 +504,10 @@ const app = createApp({
       const a=Number(this.island.amt);if(isNaN(a)||a<=0)return this.toast('请输入有效金额');
       const c=CATS.find(x=>x.id===this.island.catId);
       const list=load();list.push({id:uid(),type:this.island.type,amount:a,catId:this.island.catId,catName:c?c.name:'',srcId:getSrcId(this.island.src),srcName:this.island.src,date:this.island.date,note:this.island.note});
-      save(list);this.reload();this.island.show=false;this.toast('记账成功');
+      save(list);this.reload();this.closeIsland();this.toast('记账成功');
     },
+    dismissIsland(){ this.closeIsland(); },
+    closeIsland(){ this.island.show=false; if(this.pendingQueue.length){ const p=this.pendingQueue.shift(); this.showIsland(p, p.raw); } },
   },
   watch:{
     'island.type'(){const cat=CATS.find(c=>c.type===this.island.type);if(cat)this.island.catId=cat.id}
