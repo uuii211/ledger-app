@@ -260,7 +260,7 @@ public class PaymentListenerService extends NotificationListenerService {
         } catch (Exception e) {}
         // 兜底：银行支付通知但金额被截断，amount=0 让用户手动填入
         if (text.contains("快捷") || text.contains("快捷支") || text.contains("财付通") ||
-            text.contains("支付") || text.contains("消费") || text.contains("扣款") ||
+            (text.contains("支付") && !text.contains("支付宝")) || text.contains("消费") || text.contains("扣款") ||
             text.contains("动账") || text.contains("交易")) {
             return new PendingTx(bank, 0, 2, text);
         }
@@ -275,7 +275,8 @@ public class PaymentListenerService extends NotificationListenerService {
         String[] adKeywords = {"奖品", "返现券", "返现金", "福利", "复盘", "优惠券", "加息券",
             "免息券", "礼遇", "活动", "抽奖", "红包雨", "领券", "免单",
             "立即领取", "点击查看", "点击领取", "限时", "秒杀",
-            "消费返", "至高抽", "抽单笔", "享好礼", "年货节", "抽好礼"};
+            "消费返", "至高抽", "抽单笔", "享好礼", "年货节", "抽好礼",
+            "立减金", "赢好礼", "签约"};
         for (String kw : adKeywords) {
             if (text.contains(kw)) return true;
         }
